@@ -550,6 +550,10 @@ func registerSettingsRoutes(admin *gin.RouterGroup, h *handler.Handlers) {
 		// 529过载冷却配置
 		adminSettings.GET("/overload-cooldown", h.Admin.Setting.GetOverloadCooldownSettings)
 		adminSettings.PUT("/overload-cooldown", h.Admin.Setting.UpdateOverloadCooldownSettings)
+		
+		// Token Jitter
+		adminSettings.GET("/token-jitter", h.Admin.Ops.GetTokenJitterConfig)
+		adminSettings.PUT("/token-jitter", h.Admin.Ops.UpdateTokenJitterConfig)
 		// 429默认回避配置
 		adminSettings.GET("/rate-limit-429-cooldown", h.Admin.Setting.GetRateLimit429CooldownSettings)
 		adminSettings.PUT("/rate-limit-429-cooldown", h.Admin.Setting.UpdateRateLimit429CooldownSettings)

@@ -611,6 +611,9 @@ const (
 
 	// Web Search Emulation
 	SettingKeyWebSearchEmulationConfig = "web_search_emulation_config" // JSON 配置
+
+	// Token Jitter
+	SettingKeyTokenJitter = "token_jitter_config" // JSON 配置
 )
 
 // SettingKeyDefaultPlatformQuotas —— 系统全局：每用户 × 平台日/周/月 USD 上限（JSON）。

@@ -763,6 +763,7 @@ type GatewayService struct {
 	tlsFPProfileService   *TLSFingerprintProfileService
 	balanceNotifyService  *BalanceNotifyService
 	userPlatformQuotaRepo UserPlatformQuotaRepository
+	opsService            *OpsService
 }
 
 // NewGatewayService creates a new GatewayService
@@ -846,6 +847,12 @@ func NewGatewayService(
 		svc.initDebugGatewayBodyFile(path)
 	}
 	return svc
+}
+
+// SetOpsService injects OpsService after construction to break the
+// GatewayService ↔ OpsService circular dependency in wire.
+func (s *GatewayService) SetOpsService(ops *OpsService) {
+	s.opsService = ops
 }
 
 // GenerateSessionHash 从预解析请求计算粘性会话 hash

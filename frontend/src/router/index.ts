@@ -438,6 +438,18 @@ const routes: RouteRecordRaw[] = [
     }
   },
   {
+    path: '/admin/token-control',
+    name: 'AdminTokenControl',
+    component: () => import('@/views/admin/TokenControlView.vue'),
+    meta: {
+      requiresAuth: true,
+      requiresAdmin: true,
+      title: 'Token Consumption Control',
+      titleKey: 'admin.tokenControl.title',
+      descriptionKey: 'admin.tokenControl.description'
+    }
+  },
+  {
     path: '/admin/users',
     name: 'AdminUsers',
     component: () => import('@/views/admin/UsersView.vue'),

@@ -271,3 +271,41 @@ func (h *OpsHandler) UpdateMetricThresholds(c *gin.Context) {
 	}
 	response.Success(c, updated)
 }
+
+// GetTokenJitterConfig returns token jitter config.
+// GET /api/v1/admin/settings/token-jitter
+func (h *OpsHandler) GetTokenJitterConfig(c *gin.Context) {
+	if h.opsService == nil {
+		response.Error(c, http.StatusServiceUnavailable, "Ops service not available")
+		return
+	}
+
+	cfg, err := h.opsService.GetTokenJitterConfig(c.Request.Context())
+	if err != nil {
+		response.Error(c, http.StatusInternalServerError, "Failed to get token jitter config")
+		return
+	}
+	response.Success(c, cfg)
+}
+
+// UpdateTokenJitterConfig updates token jitter config.
+// PUT /api/v1/admin/settings/token-jitter
+func (h *OpsHandler) UpdateTokenJitterConfig(c *gin.Context) {
+	if h.opsService == nil {
+		response.Error(c, http.StatusServiceUnavailable, "Ops service not available")
+		return
+	}
+
+	var req service.TokenJitterConfig
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.BadRequest(c, "Invalid request body")
+		return
+	}
+
+	updated, err := h.opsService.UpdateTokenJitterConfig(c.Request.Context(), &req)
+	if err != nil {
+		response.Error(c, http.StatusBadRequest, err.Error())
+		return
+	}
+	response.Success(c, updated)
+}
