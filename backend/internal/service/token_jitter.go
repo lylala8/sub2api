@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"math"
 	"math/rand"
 	"sync"
 	"time"
@@ -182,12 +183,12 @@ func ApplyTokenJitter(cfg *TokenJitterConfig, inputTokens, outputTokens, cacheCr
 			jitterMultiplier := 1 + (rand.Float64() * cfg.NormalTokenRange / 100)
 			switch cfg.NormalTokenMode {
 			case ModeInputOnly:
-				inputTokens = int(float64(inputTokens) * jitterMultiplier)
+				inputTokens = int(math.Ceil(float64(inputTokens) * jitterMultiplier))
 			case ModeOutputOnly:
-				outputTokens = int(float64(outputTokens) * jitterMultiplier)
+				outputTokens = int(math.Ceil(float64(outputTokens) * jitterMultiplier))
 			default: // ModeAll
-				inputTokens = int(float64(inputTokens) * jitterMultiplier)
-				outputTokens = int(float64(outputTokens) * jitterMultiplier)
+				inputTokens = int(math.Ceil(float64(inputTokens) * jitterMultiplier))
+				outputTokens = int(math.Ceil(float64(outputTokens) * jitterMultiplier))
 			}
 		}
 	}
@@ -198,12 +199,12 @@ func ApplyTokenJitter(cfg *TokenJitterConfig, inputTokens, outputTokens, cacheCr
 			jitterMultiplier := 1 + (rand.Float64() * cfg.CacheTokenRange / 100)
 			switch cfg.CacheTokenMode {
 			case ModeReadOnly:
-				cacheReadTokens = int(float64(cacheReadTokens) * jitterMultiplier)
+				cacheReadTokens = int(math.Ceil(float64(cacheReadTokens) * jitterMultiplier))
 			case ModeCreationOnly:
-				cacheCreationTokens = int(float64(cacheCreationTokens) * jitterMultiplier)
+				cacheCreationTokens = int(math.Ceil(float64(cacheCreationTokens) * jitterMultiplier))
 			default: // ModeAll
-				cacheCreationTokens = int(float64(cacheCreationTokens) * jitterMultiplier)
-				cacheReadTokens = int(float64(cacheReadTokens) * jitterMultiplier)
+				cacheCreationTokens = int(math.Ceil(float64(cacheCreationTokens) * jitterMultiplier))
+				cacheReadTokens = int(math.Ceil(float64(cacheReadTokens) * jitterMultiplier))
 			}
 		}
 	}

@@ -13,11 +13,11 @@ export interface TokenJitterConfig {
 }
 
 export async function getTokenJitterConfig(): Promise<TokenJitterConfig> {
-  const response = await apiClient.get<TokenJitterConfig>('/api/admin/settings/token-jitter')
+  const response = await apiClient.get<TokenJitterConfig>('/admin/settings/token-jitter')
   return response.data
 }
 
 export async function updateTokenJitterConfig(cfg: TokenJitterConfig): Promise<TokenJitterConfig> {
-  const response = await apiClient.put<TokenJitterConfig>('/api/admin/settings/token-jitter', cfg)
+  const response = await apiClient.put<TokenJitterConfig>('/admin/settings/token-jitter', cfg)
   return response.data
 }

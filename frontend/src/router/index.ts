@@ -597,6 +597,18 @@ const routes: RouteRecordRaw[] = [
     }
   },
   {
+    path: '/admin/token-control',
+    name: 'AdminTokenControl',
+    component: () => import('@/views/admin/TokenControlView.vue'),
+    meta: {
+      requiresAuth: true,
+      requiresAdmin: true,
+      title: 'Token Control',
+      titleKey: 'admin.tokenControl.title',
+      descriptionKey: 'admin.tokenControl.subtitle'
+    }
+  },
+  {
     path: '/admin/risk-control',
     name: 'AdminRiskControl',
     component: () => import('@/views/admin/RiskControlView.vue'),
