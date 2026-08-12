@@ -152,3 +152,19 @@ func TestRewriteJSONUsageBytes_OpenAIFormat(t *testing.T) {
 	require.NotEmpty(t, out)
 	assert.NotEqual(t, string(rawJSON), string(out))
 }
+
+func TestRewriteJSONUsageBytes_PanicRecovery(t *testing.T) {
+	cfg := &TokenJitterConfig{
+		Enabled:                true,
+		NormalTokenMode:        ModeAll,
+		NormalTokenRange:       10.0,
+		NormalTokenProbability: 100.0,
+	}
+
+	// 传入非法/畸形数据，验证全局 panic 捕获防线，确保绝不发生崩溃且无痛返回原始输入
+	invalidData := []byte(`{invalid_json_bytes`)
+	require.NotPanics(t, func() {
+		out := RewriteJSONUsageBytes(cfg, invalidData)
+		assert.Equal(t, string(invalidData), string(out))
+	})
+}

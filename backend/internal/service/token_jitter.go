@@ -108,14 +108,11 @@ func (s *OpsService) GetTokenJitterConfig(ctx context.Context) (*TokenJitterConf
 
 	raw, err := s.settingRepo.GetValue(ctx, SettingKeyTokenJitter)
 	if err != nil {
-		if errors.Is(err, ErrSettingNotFound) {
-			globalTokenJitterCache.Lock()
-			globalTokenJitterCache.cfg = defaultCfg
-			globalTokenJitterCache.updatedAt = time.Now()
-			globalTokenJitterCache.Unlock()
-			return defaultCfg, nil
-		}
-		return nil, err
+		globalTokenJitterCache.Lock()
+		globalTokenJitterCache.cfg = defaultCfg
+		globalTokenJitterCache.updatedAt = time.Now()
+		globalTokenJitterCache.Unlock()
+		return defaultCfg, nil
 	}
 
 	cfg := &TokenJitterConfig{}
@@ -213,7 +210,14 @@ func ApplyTokenJitter(cfg *TokenJitterConfig, inputTokens, outputTokens, cacheCr
 }
 
 // RewriteJSONUsageBytes 检查 JSON 数据中是否有 usage 节点，若有且开启了抖动，则改写其中的 usage Token 数并重算 total_tokens
-func RewriteJSONUsageBytes(cfg *TokenJitterConfig, body []byte) []byte {
+func RewriteJSONUsageBytes(cfg *TokenJitterConfig, body []byte) (outBytes []byte) {
+	// 防御性 panic 恢复：如果解析/改写遇到任何未预期异常，静默恢复并绝对保证返回原始 body，不影响 API 主流程
+	defer func() {
+		if r := recover(); r != nil {
+			outBytes = body
+		}
+	}()
+
 	if cfg == nil || !cfg.Enabled || len(body) == 0 {
 		return body
 	}
