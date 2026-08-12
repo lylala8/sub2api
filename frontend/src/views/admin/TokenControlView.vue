@@ -145,12 +145,12 @@ onMounted(fetchConfig)
                 v-model.number="config.normal_token_range"
                 type="range"
                 min="0"
-                max="10"
+                max="50"
                 step="0.5"
                 class="range-slider w-full"
               />
               <div class="mt-1 flex justify-between text-[10px] text-gray-400">
-                <span>0%</span><span>5%</span><span>10%</span>
+                <span>0%</span><span>25%</span><span>50%</span>
               </div>
             </div>
             <!-- Probability -->
@@ -232,12 +232,12 @@ onMounted(fetchConfig)
                 v-model.number="config.cache_token_range"
                 type="range"
                 min="0"
-                max="10"
+                max="50"
                 step="0.5"
                 class="range-slider w-full"
               />
               <div class="mt-1 flex justify-between text-[10px] text-gray-400">
-                <span>0%</span><span>5%</span><span>10%</span>
+                <span>0%</span><span>25%</span><span>50%</span>
               </div>
             </div>
             <!-- Probability -->

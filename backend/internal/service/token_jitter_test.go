@@ -22,9 +22,9 @@ func TestValidateTokenJitterConfig(t *testing.T) {
 	}
 	require.NoError(t, validateTokenJitterConfig(cfg))
 
-	// Invalid NormalTokenRange (> 10)
+	// Invalid NormalTokenRange (> 50)
 	invalidCfg := *cfg
-	invalidCfg.NormalTokenRange = 15.0
+	invalidCfg.NormalTokenRange = 55.0
 	require.Error(t, validateTokenJitterConfig(&invalidCfg))
 
 	// Invalid CacheTokenProbability (> 100)
@@ -69,6 +69,34 @@ func TestApplyTokenJitter_Disabled(t *testing.T) {
 	assert.Equal(t, 200, nout)
 	assert.Equal(t, 50, ncc)
 	assert.Equal(t, 80, ncr)
+}
+
+func TestApplyTokenJitter_StatisticalProbability(t *testing.T) {
+	// 验证 1% 概率在大样本 (100,000 次) 下的统计精确度
+	cfg := &TokenJitterConfig{
+		Enabled:                true,
+		NormalTokenMode:        ModeAll,
+		NormalTokenRange:       5.0,
+		NormalTokenProbability: 1.0, // 1%
+		NormalTokenMinTokens:   0,
+	}
+
+	triggeredCount := 0
+	iterations := 100000
+
+	for i := 0; i < iterations; i++ {
+		nin, _, _, _ := ApplyTokenJitter(cfg, 100, 100, 0, 0)
+		if nin > 100 {
+			triggeredCount++
+		}
+	}
+
+	// 100,000 次实验中，1% 概率期望触发约为 1000 次 (允许 0.8% - 1.2% 的合理统计标准差卡方区间)
+	ratio := float64(triggeredCount) / float64(iterations) * 100.0
+	t.Logf("1%% probability statistical result: %d / %d = %.3f%%", triggeredCount, iterations, ratio)
+
+	assert.GreaterOrEqual(t, ratio, 0.7)
+	assert.LessOrEqual(t, ratio, 1.3)
 }
 
 func TestRewriteJSONUsageBytes_OpenAIFormat(t *testing.T) {

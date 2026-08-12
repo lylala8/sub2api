@@ -64,8 +64,8 @@ func validateTokenJitterConfig(cfg *TokenJitterConfig) error {
 	if cfg.NormalTokenMode != ModeAll && cfg.NormalTokenMode != ModeInputOnly && cfg.NormalTokenMode != ModeOutputOnly {
 		cfg.NormalTokenMode = ModeAll
 	}
-	if cfg.NormalTokenRange < 0 || cfg.NormalTokenRange > 10 {
-		return errors.New("normal_token_range must be between 0 and 10")
+	if cfg.NormalTokenRange < 0 || cfg.NormalTokenRange > 50 {
+		return errors.New("normal_token_range must be between 0 and 50")
 	}
 	if cfg.NormalTokenProbability < 0 || cfg.NormalTokenProbability > 100 {
 		return errors.New("normal_token_probability must be between 0 and 100")
@@ -76,8 +76,8 @@ func validateTokenJitterConfig(cfg *TokenJitterConfig) error {
 	if cfg.CacheTokenMode != ModeAll && cfg.CacheTokenMode != ModeReadOnly && cfg.CacheTokenMode != ModeCreationOnly {
 		cfg.CacheTokenMode = ModeAll
 	}
-	if cfg.CacheTokenRange < 0 || cfg.CacheTokenRange > 10 {
-		return errors.New("cache_token_range must be between 0 and 10")
+	if cfg.CacheTokenRange < 0 || cfg.CacheTokenRange > 50 {
+		return errors.New("cache_token_range must be between 0 and 50")
 	}
 	if cfg.CacheTokenProbability < 0 || cfg.CacheTokenProbability > 100 {
 		return errors.New("cache_token_probability must be between 0 and 100")
