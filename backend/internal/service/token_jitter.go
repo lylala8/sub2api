@@ -7,11 +7,21 @@ import (
 	"math/rand"
 )
 
+const (
+	ModeAll          = "all"
+	ModeInputOnly    = "input_only"
+	ModeOutputOnly   = "output_only"
+	ModeReadOnly     = "read_only"
+	ModeCreationOnly = "creation_only"
+)
+
 type TokenJitterConfig struct {
 	Enabled                bool    `json:"enabled"`
+	NormalTokenMode        string  `json:"normal_token_mode"` // "all", "input_only", "output_only"
 	NormalTokenRange       float64 `json:"normal_token_range"`
 	NormalTokenProbability float64 `json:"normal_token_probability"`
 	NormalTokenMinTokens   int     `json:"normal_token_min_tokens"`
+	CacheTokenMode         string  `json:"cache_token_mode"` // "all", "read_only", "creation_only"
 	CacheTokenRange        float64 `json:"cache_token_range"`
 	CacheTokenProbability  float64 `json:"cache_token_probability"`
 	CacheTokenMinTokens    int     `json:"cache_token_min_tokens"`
@@ -20,9 +30,11 @@ type TokenJitterConfig struct {
 func defaultTokenJitterConfig() *TokenJitterConfig {
 	return &TokenJitterConfig{
 		Enabled:                false,
+		NormalTokenMode:        ModeAll,
 		NormalTokenRange:       0,
 		NormalTokenProbability: 0,
 		NormalTokenMinTokens:   0,
+		CacheTokenMode:         ModeAll,
 		CacheTokenRange:        0,
 		CacheTokenProbability:  0,
 		CacheTokenMinTokens:    0,
@@ -33,6 +45,9 @@ func validateTokenJitterConfig(cfg *TokenJitterConfig) error {
 	if cfg == nil {
 		return errors.New("invalid config")
 	}
+	if cfg.NormalTokenMode != ModeAll && cfg.NormalTokenMode != ModeInputOnly && cfg.NormalTokenMode != ModeOutputOnly {
+		cfg.NormalTokenMode = ModeAll
+	}
 	if cfg.NormalTokenRange < 0 || cfg.NormalTokenRange > 10 {
 		return errors.New("normal_token_range must be between 0 and 10")
 	}
@@ -41,6 +56,9 @@ func validateTokenJitterConfig(cfg *TokenJitterConfig) error {
 	}
 	if cfg.NormalTokenMinTokens < 0 {
 		return errors.New("normal_token_min_tokens must be greater than or equal to 0")
+	}
+	if cfg.CacheTokenMode != ModeAll && cfg.CacheTokenMode != ModeReadOnly && cfg.CacheTokenMode != ModeCreationOnly {
+		cfg.CacheTokenMode = ModeAll
 	}
 	if cfg.CacheTokenRange < 0 || cfg.CacheTokenRange > 10 {
 		return errors.New("cache_token_range must be between 0 and 10")
@@ -74,6 +92,13 @@ func (s *OpsService) GetTokenJitterConfig(ctx context.Context) (*TokenJitterConf
 	cfg := &TokenJitterConfig{}
 	if err := json.Unmarshal([]byte(raw), cfg); err != nil {
 		return defaultCfg, nil
+	}
+
+	if cfg.NormalTokenMode == "" {
+		cfg.NormalTokenMode = ModeAll
+	}
+	if cfg.CacheTokenMode == "" {
+		cfg.CacheTokenMode = ModeAll
 	}
 
 	return cfg, nil
@@ -112,23 +137,37 @@ func ApplyTokenJitter(cfg *TokenJitterConfig, inputTokens, outputTokens, cacheCr
 		return inputTokens, outputTokens, cacheCreationTokens, cacheReadTokens
 	}
 
-	// 普通 Token 浮动判断：要求输入+输出总数达到触发门槛
+	// 普通 Token 浮动判断
 	totalNormal := inputTokens + outputTokens
 	if totalNormal >= cfg.NormalTokenMinTokens && cfg.NormalTokenProbability > 0 && cfg.NormalTokenRange > 0 {
 		if rand.Float64()*100 < cfg.NormalTokenProbability {
 			jitterMultiplier := 1 + (rand.Float64() * cfg.NormalTokenRange / 100)
-			inputTokens = int(float64(inputTokens) * jitterMultiplier)
-			outputTokens = int(float64(outputTokens) * jitterMultiplier)
+			switch cfg.NormalTokenMode {
+			case ModeInputOnly:
+				inputTokens = int(float64(inputTokens) * jitterMultiplier)
+			case ModeOutputOnly:
+				outputTokens = int(float64(outputTokens) * jitterMultiplier)
+			default: // ModeAll
+				inputTokens = int(float64(inputTokens) * jitterMultiplier)
+				outputTokens = int(float64(outputTokens) * jitterMultiplier)
+			}
 		}
 	}
 
-	// 缓存 Token 浮动判断：要求缓存创建+缓存读取总数达到触发门槛
+	// 缓存 Token 浮动判断
 	totalCache := cacheCreationTokens + cacheReadTokens
 	if totalCache >= cfg.CacheTokenMinTokens && cfg.CacheTokenProbability > 0 && cfg.CacheTokenRange > 0 {
 		if rand.Float64()*100 < cfg.CacheTokenProbability {
 			jitterMultiplier := 1 + (rand.Float64() * cfg.CacheTokenRange / 100)
-			cacheCreationTokens = int(float64(cacheCreationTokens) * jitterMultiplier)
-			cacheReadTokens = int(float64(cacheReadTokens) * jitterMultiplier)
+			switch cfg.CacheTokenMode {
+			case ModeReadOnly:
+				cacheReadTokens = int(float64(cacheReadTokens) * jitterMultiplier)
+			case ModeCreationOnly:
+				cacheCreationTokens = int(float64(cacheCreationTokens) * jitterMultiplier)
+			default: // ModeAll
+				cacheCreationTokens = int(float64(cacheCreationTokens) * jitterMultiplier)
+				cacheReadTokens = int(float64(cacheReadTokens) * jitterMultiplier)
+			}
 		}
 	}
 

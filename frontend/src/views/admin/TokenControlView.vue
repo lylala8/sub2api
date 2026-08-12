@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, onMounted } from 'vue'
+import { ref, onMounted, computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { getTokenJitterConfig, updateTokenJitterConfig, type TokenJitterConfig } from '@/api/tokenJitter'
 import { useAppStore } from '@/stores'
@@ -12,12 +12,36 @@ const saving = ref(false)
 
 const config = ref<TokenJitterConfig>({
   enabled: false,
+  normal_token_mode: 'all',
   normal_token_range: 0,
   normal_token_probability: 0,
   normal_token_min_tokens: 0,
+  cache_token_mode: 'all',
   cache_token_range: 0,
   cache_token_probability: 0,
   cache_token_min_tokens: 0,
+})
+
+const normalTargetText = computed(() => {
+  switch (config.value.normal_token_mode) {
+    case 'input_only':
+      return t('admin.tokenControl.targetInputOnly')
+    case 'output_only':
+      return t('admin.tokenControl.targetOutputOnly')
+    default:
+      return t('admin.tokenControl.targetAllNormal')
+  }
+})
+
+const cacheTargetText = computed(() => {
+  switch (config.value.cache_token_mode) {
+    case 'read_only':
+      return t('admin.tokenControl.targetReadOnly')
+    case 'creation_only':
+      return t('admin.tokenControl.targetCreationOnly')
+    default:
+      return t('admin.tokenControl.targetAllCache')
+  }
 })
 
 async function fetchConfig() {
@@ -97,6 +121,20 @@ onMounted(fetchConfig)
             <p class="mt-0.5 text-xs text-gray-500 dark:text-gray-400">{{ t('admin.tokenControl.normalTokenHint') }}</p>
           </div>
           <div class="grid grid-cols-2 gap-x-6 gap-y-4 px-5 py-4">
+            <!-- Mode selection -->
+            <div class="col-span-2 pb-1">
+              <label class="mb-1 block text-xs font-medium text-gray-600 dark:text-gray-400">
+                {{ t('admin.tokenControl.mode') }}
+              </label>
+              <select
+                v-model="config.normal_token_mode"
+                class="w-full rounded-lg border border-gray-300 bg-white px-3 py-1.5 text-sm text-gray-900 focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500 dark:border-dark-600 dark:bg-dark-700 dark:text-white"
+              >
+                <option value="all">{{ t('admin.tokenControl.modeAll') }}</option>
+                <option value="input_only">{{ t('admin.tokenControl.modeInputOnly') }}</option>
+                <option value="output_only">{{ t('admin.tokenControl.modeOutputOnly') }}</option>
+              </select>
+            </div>
             <!-- Range -->
             <div>
               <label class="mb-1.5 block text-xs font-medium text-gray-600 dark:text-gray-400">
@@ -152,6 +190,7 @@ onMounted(fetchConfig)
           <div class="rounded-b-xl bg-gray-50 px-5 py-3 dark:bg-dark-750">
             <p class="text-xs text-gray-500 dark:text-gray-400">
               {{ t('admin.tokenControl.previewNormal', {
+                target: normalTargetText,
                 range: config.normal_token_range.toFixed(1),
                 prob: config.normal_token_probability.toFixed(0),
                 min: config.normal_token_min_tokens,
@@ -169,6 +208,20 @@ onMounted(fetchConfig)
             <p class="mt-0.5 text-xs text-gray-500 dark:text-gray-400">{{ t('admin.tokenControl.cacheTokenHint') }}</p>
           </div>
           <div class="grid grid-cols-2 gap-x-6 gap-y-4 px-5 py-4">
+            <!-- Mode selection -->
+            <div class="col-span-2 pb-1">
+              <label class="mb-1 block text-xs font-medium text-gray-600 dark:text-gray-400">
+                {{ t('admin.tokenControl.mode') }}
+              </label>
+              <select
+                v-model="config.cache_token_mode"
+                class="w-full rounded-lg border border-gray-300 bg-white px-3 py-1.5 text-sm text-gray-900 focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500 dark:border-dark-600 dark:bg-dark-700 dark:text-white"
+              >
+                <option value="all">{{ t('admin.tokenControl.modeAll') }}</option>
+                <option value="read_only">{{ t('admin.tokenControl.modeReadOnly') }}</option>
+                <option value="creation_only">{{ t('admin.tokenControl.modeCreationOnly') }}</option>
+              </select>
+            </div>
             <!-- Range -->
             <div>
               <label class="mb-1.5 block text-xs font-medium text-gray-600 dark:text-gray-400">
@@ -224,6 +277,7 @@ onMounted(fetchConfig)
           <div class="rounded-b-xl bg-gray-50 px-5 py-3 dark:bg-dark-750">
             <p class="text-xs text-gray-500 dark:text-gray-400">
               {{ t('admin.tokenControl.previewCache', {
+                target: cacheTargetText,
                 range: config.cache_token_range.toFixed(1),
                 prob: config.cache_token_probability.toFixed(0),
                 min: config.cache_token_min_tokens,

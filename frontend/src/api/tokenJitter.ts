@@ -2,9 +2,11 @@ import apiClient from './index'
 
 export interface TokenJitterConfig {
   enabled: boolean
+  normal_token_mode: 'all' | 'input_only' | 'output_only'
   normal_token_range: number
   normal_token_probability: number
   normal_token_min_tokens: number
+  cache_token_mode: 'all' | 'read_only' | 'creation_only'
   cache_token_range: number
   cache_token_probability: number
   cache_token_min_tokens: number
