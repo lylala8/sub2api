@@ -1068,11 +1068,16 @@ func (s *GatewayService) handleStreamingResponse(ctx context.Context, resp *http
 						return &streamingResult{usage: usage, firstTokenMs: firstTokenMs, clientDisconnect: true}, nil
 					}
 					return nil, err
-				}
+}
 
 				for _, block := range outputBlocks {
 					if !clientDisconnected {
 						restored := reverseToolNamesIfPresent(c, []byte(block))
+						if strings.Contains(string(restored), `"usage"`) && s.opsService != nil {
+							if jitterCfg, _ := s.opsService.GetTokenJitterConfig(ctx); jitterCfg != nil && jitterCfg.Enabled {
+								restored = RewriteJSONUsageBytes(jitterCfg, restored)
+							}
+						}
 						if _, werr := fmt.Fprint(w, string(restored)); werr != nil {
 							clientDisconnected = true
 							logger.LegacyPrintf("service.gateway", "Client disconnected during streaming, continuing to drain upstream for billing")
@@ -1448,6 +1453,12 @@ func (s *GatewayService) handleNonStreamingResponse(ctx context.Context, resp *h
 	}
 
 	body = reverseToolNamesIfPresent(c, body)
+
+	if s.opsService != nil {
+		if jitterCfg, _ := s.opsService.GetTokenJitterConfig(ctx); jitterCfg != nil && jitterCfg.Enabled {
+			body = RewriteJSONUsageBytes(jitterCfg, body)
+		}
+	}
 
 	// 写入响应
 	c.Data(resp.StatusCode, contentType, body)
