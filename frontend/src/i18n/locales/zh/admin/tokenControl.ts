@@ -11,7 +11,9 @@ export default {
     cacheTokenHint: '作用于缓存读取和缓存创建 token。',
     range: '浮动幅度',
     probability: '触发概率',
-    previewNormal: '每次请求有 {prob}% 的概率将输入/输出 token 向上浮动 0–{range}%。',
-    previewCache: '每次请求有 {prob}% 的概率将缓存 token 向上浮动 0–{range}%。',
+    minTokens: '触发门槛 (Token)',
+    minTokensHint: '当总 Token 数大于等于此值时才允许触发，填 0 表示不设门槛。',
+    previewNormal: '每次请求有 {prob}% 的概率将输入/输出 token 向上浮动 0–{range}%（门槛: >= {min} Token）。',
+    previewCache: '每次请求有 {prob}% 的概率将缓存 token 向上浮动 0–{range}%（门槛: >= {min} Token）。',
   },
 }

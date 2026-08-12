@@ -8,20 +8,24 @@ import (
 )
 
 type TokenJitterConfig struct {
-	Enabled                  bool    `json:"enabled"`
-	NormalTokenRange         float64 `json:"normal_token_range"`
-	NormalTokenProbability   float64 `json:"normal_token_probability"`
-	CacheTokenRange          float64 `json:"cache_token_range"`
-	CacheTokenProbability    float64 `json:"cache_token_probability"`
+	Enabled                bool    `json:"enabled"`
+	NormalTokenRange       float64 `json:"normal_token_range"`
+	NormalTokenProbability float64 `json:"normal_token_probability"`
+	NormalTokenMinTokens   int     `json:"normal_token_min_tokens"`
+	CacheTokenRange        float64 `json:"cache_token_range"`
+	CacheTokenProbability  float64 `json:"cache_token_probability"`
+	CacheTokenMinTokens    int     `json:"cache_token_min_tokens"`
 }
 
 func defaultTokenJitterConfig() *TokenJitterConfig {
 	return &TokenJitterConfig{
-		Enabled:                  false,
-		NormalTokenRange:         0,
-		NormalTokenProbability:   0,
-		CacheTokenRange:          0,
-		CacheTokenProbability:    0,
+		Enabled:                false,
+		NormalTokenRange:       0,
+		NormalTokenProbability: 0,
+		NormalTokenMinTokens:   0,
+		CacheTokenRange:        0,
+		CacheTokenProbability:  0,
+		CacheTokenMinTokens:    0,
 	}
 }
 
@@ -35,11 +39,17 @@ func validateTokenJitterConfig(cfg *TokenJitterConfig) error {
 	if cfg.NormalTokenProbability < 0 || cfg.NormalTokenProbability > 100 {
 		return errors.New("normal_token_probability must be between 0 and 100")
 	}
+	if cfg.NormalTokenMinTokens < 0 {
+		return errors.New("normal_token_min_tokens must be greater than or equal to 0")
+	}
 	if cfg.CacheTokenRange < 0 || cfg.CacheTokenRange > 10 {
 		return errors.New("cache_token_range must be between 0 and 10")
 	}
 	if cfg.CacheTokenProbability < 0 || cfg.CacheTokenProbability > 100 {
 		return errors.New("cache_token_probability must be between 0 and 100")
+	}
+	if cfg.CacheTokenMinTokens < 0 {
+		return errors.New("cache_token_min_tokens must be greater than or equal to 0")
 	}
 	return nil
 }
@@ -102,7 +112,9 @@ func ApplyTokenJitter(cfg *TokenJitterConfig, inputTokens, outputTokens, cacheCr
 		return inputTokens, outputTokens, cacheCreationTokens, cacheReadTokens
 	}
 
-	if cfg.NormalTokenProbability > 0 && cfg.NormalTokenRange > 0 {
+	// 普通 Token 浮动判断：要求输入+输出总数达到触发门槛
+	totalNormal := inputTokens + outputTokens
+	if totalNormal >= cfg.NormalTokenMinTokens && cfg.NormalTokenProbability > 0 && cfg.NormalTokenRange > 0 {
 		if rand.Float64()*100 < cfg.NormalTokenProbability {
 			jitterMultiplier := 1 + (rand.Float64() * cfg.NormalTokenRange / 100)
 			inputTokens = int(float64(inputTokens) * jitterMultiplier)
@@ -110,7 +122,9 @@ func ApplyTokenJitter(cfg *TokenJitterConfig, inputTokens, outputTokens, cacheCr
 		}
 	}
 
-	if cfg.CacheTokenProbability > 0 && cfg.CacheTokenRange > 0 {
+	// 缓存 Token 浮动判断：要求缓存创建+缓存读取总数达到触发门槛
+	totalCache := cacheCreationTokens + cacheReadTokens
+	if totalCache >= cfg.CacheTokenMinTokens && cfg.CacheTokenProbability > 0 && cfg.CacheTokenRange > 0 {
 		if rand.Float64()*100 < cfg.CacheTokenProbability {
 			jitterMultiplier := 1 + (rand.Float64() * cfg.CacheTokenRange / 100)
 			cacheCreationTokens = int(float64(cacheCreationTokens) * jitterMultiplier)

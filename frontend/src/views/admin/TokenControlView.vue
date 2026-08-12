@@ -14,8 +14,10 @@ const config = ref<TokenJitterConfig>({
   enabled: false,
   normal_token_range: 0,
   normal_token_probability: 0,
+  normal_token_min_tokens: 0,
   cache_token_range: 0,
   cache_token_probability: 0,
+  cache_token_min_tokens: 0,
 })
 
 async function fetchConfig() {
@@ -131,6 +133,20 @@ onMounted(fetchConfig)
                 <span>0%</span><span>50%</span><span>100%</span>
               </div>
             </div>
+            <!-- Min Tokens Threshold -->
+            <div class="col-span-2 pt-1">
+              <label class="mb-1 block text-xs font-medium text-gray-600 dark:text-gray-400">
+                {{ t('admin.tokenControl.minTokens') }}
+              </label>
+              <input
+                v-model.number="config.normal_token_min_tokens"
+                type="number"
+                min="0"
+                step="100"
+                class="w-full rounded-lg border border-gray-300 bg-white px-3 py-1.5 text-sm text-gray-900 focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500 dark:border-dark-600 dark:bg-dark-700 dark:text-white"
+              />
+              <p class="mt-1 text-[11px] text-gray-400 dark:text-gray-500">{{ t('admin.tokenControl.minTokensHint') }}</p>
+            </div>
           </div>
           <!-- Preview -->
           <div class="rounded-b-xl bg-gray-50 px-5 py-3 dark:bg-dark-750">
@@ -138,6 +154,7 @@ onMounted(fetchConfig)
               {{ t('admin.tokenControl.previewNormal', {
                 range: config.normal_token_range.toFixed(1),
                 prob: config.normal_token_probability.toFixed(0),
+                min: config.normal_token_min_tokens,
               }) }}
             </p>
           </div>
@@ -188,6 +205,20 @@ onMounted(fetchConfig)
                 <span>0%</span><span>50%</span><span>100%</span>
               </div>
             </div>
+            <!-- Min Tokens Threshold -->
+            <div class="col-span-2 pt-1">
+              <label class="mb-1 block text-xs font-medium text-gray-600 dark:text-gray-400">
+                {{ t('admin.tokenControl.minTokens') }}
+              </label>
+              <input
+                v-model.number="config.cache_token_min_tokens"
+                type="number"
+                min="0"
+                step="100"
+                class="w-full rounded-lg border border-gray-300 bg-white px-3 py-1.5 text-sm text-gray-900 focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500 dark:border-dark-600 dark:bg-dark-700 dark:text-white"
+              />
+              <p class="mt-1 text-[11px] text-gray-400 dark:text-gray-500">{{ t('admin.tokenControl.minTokensHint') }}</p>
+            </div>
           </div>
           <!-- Preview -->
           <div class="rounded-b-xl bg-gray-50 px-5 py-3 dark:bg-dark-750">
@@ -195,6 +226,7 @@ onMounted(fetchConfig)
               {{ t('admin.tokenControl.previewCache', {
                 range: config.cache_token_range.toFixed(1),
                 prob: config.cache_token_probability.toFixed(0),
+                min: config.cache_token_min_tokens,
               }) }}
             </p>
           </div>
