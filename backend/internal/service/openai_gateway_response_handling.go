@@ -561,13 +561,19 @@ func (s *OpenAIGatewayService) handleStreamingResponseWithReasoning(ctx context.
 
 			// 写入客户端（客户端断开后继续 drain 上游）
 			if !clientDisconnected {
+				writeLine := line
+				if strings.Contains(writeLine, `"usage"`) && s.opsService != nil {
+					if jitterCfg, _ := s.opsService.GetTokenJitterConfig(ctx); jitterCfg != nil && jitterCfg.Enabled {
+						writeLine = string(RewriteJSONUsageBytes(jitterCfg, []byte(writeLine)))
+					}
+				}
 				shouldFlush := queueDrained && (clientOutputStarted || startsClientOutput)
 				if firstTokenMs == nil && startsClientOutput {
 					// 保证首个 token 事件尽快出站，避免影响 TTFT。
 					shouldFlush = true
 				}
 				eventShouldFlush = eventShouldFlush || shouldFlush
-				if _, err := writePendingString(line); err != nil {
+				if _, err := writePendingString(writeLine); err != nil {
 					handlePendingWriteError(err)
 				} else if _, err := writePendingString("\n"); err != nil {
 					handlePendingWriteError(err)
@@ -1251,6 +1257,12 @@ func (s *OpenAIGatewayService) handleNonStreamingResponse(ctx context.Context, r
 	if s.cfg != nil && !s.cfg.Security.ResponseHeaders.Enabled {
 		if upstreamType := resp.Header.Get("Content-Type"); upstreamType != "" {
 			contentType = upstreamType
+		}
+	}
+
+	if s.opsService != nil {
+		if jitterCfg, _ := s.opsService.GetTokenJitterConfig(ctx); jitterCfg != nil && jitterCfg.Enabled {
+			body = RewriteJSONUsageBytes(jitterCfg, body)
 		}
 	}
 

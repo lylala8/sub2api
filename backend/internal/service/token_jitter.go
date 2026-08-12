@@ -7,6 +7,9 @@ import (
 	"math/rand"
 	"sync"
 	"time"
+
+	"github.com/tidwall/gjson"
+	"github.com/tidwall/sjson"
 )
 
 const (
@@ -90,7 +93,6 @@ func (s *OpsService) GetTokenJitterConfig(ctx context.Context) (*TokenJitterConf
 		return defaultCfg, nil
 	}
 
-	// 优先检查 5 秒内的内存缓存
 	globalTokenJitterCache.RLock()
 	if globalTokenJitterCache.cfg != nil && time.Since(globalTokenJitterCache.updatedAt) < tokenJitterCacheTTL {
 		cached := globalTokenJitterCache.cfg
@@ -127,7 +129,6 @@ func (s *OpsService) GetTokenJitterConfig(ctx context.Context) (*TokenJitterConf
 		cfg.CacheTokenMode = ModeAll
 	}
 
-	// 更新内存缓存
 	globalTokenJitterCache.Lock()
 	globalTokenJitterCache.cfg = cfg
 	globalTokenJitterCache.updatedAt = time.Now()
@@ -162,7 +163,6 @@ func (s *OpsService) UpdateTokenJitterConfig(ctx context.Context, cfg *TokenJitt
 	updated := &TokenJitterConfig{}
 	_ = json.Unmarshal(raw, updated)
 
-	// 更新设置时，立即刷新/清除本地内存缓存，确保保存后配置立即生效
 	globalTokenJitterCache.Lock()
 	globalTokenJitterCache.cfg = updated
 	globalTokenJitterCache.updatedAt = time.Now()
@@ -176,7 +176,6 @@ func ApplyTokenJitter(cfg *TokenJitterConfig, inputTokens, outputTokens, cacheCr
 		return inputTokens, outputTokens, cacheCreationTokens, cacheReadTokens
 	}
 
-	// 普通 Token 浮动判断
 	totalNormal := inputTokens + outputTokens
 	if totalNormal >= cfg.NormalTokenMinTokens && cfg.NormalTokenProbability > 0 && cfg.NormalTokenRange > 0 {
 		if rand.Float64()*100 < cfg.NormalTokenProbability {
@@ -193,7 +192,6 @@ func ApplyTokenJitter(cfg *TokenJitterConfig, inputTokens, outputTokens, cacheCr
 		}
 	}
 
-	// 缓存 Token 浮动判断
 	totalCache := cacheCreationTokens + cacheReadTokens
 	if totalCache >= cfg.CacheTokenMinTokens && cfg.CacheTokenProbability > 0 && cfg.CacheTokenRange > 0 {
 		if rand.Float64()*100 < cfg.CacheTokenProbability {
@@ -211,4 +209,97 @@ func ApplyTokenJitter(cfg *TokenJitterConfig, inputTokens, outputTokens, cacheCr
 	}
 
 	return inputTokens, outputTokens, cacheCreationTokens, cacheReadTokens
+}
+
+// RewriteJSONUsageBytes 检查 JSON 数据中是否有 usage 节点，若有且开启了抖动，则改写其中的 usage Token 数并重算 total_tokens
+func RewriteJSONUsageBytes(cfg *TokenJitterConfig, body []byte) []byte {
+	if cfg == nil || !cfg.Enabled || len(body) == 0 {
+		return body
+	}
+
+	// 支持根节点为 usage，或包裹在 "usage" / "response.usage" 节点中的形式
+	var usageRes gjson.Result
+	var prefixPath string
+
+	if res := gjson.GetBytes(body, "usage"); res.Exists() && res.IsObject() {
+		usageRes = res
+		prefixPath = "usage."
+	} else if res := gjson.GetBytes(body, "response.usage"); res.Exists() && res.IsObject() {
+		usageRes = res
+		prefixPath = "response.usage."
+	} else if res := gjson.GetBytes(body, "prompt_tokens"); res.Exists() {
+		usageRes = gjson.ParseBytes(body)
+		prefixPath = ""
+	} else if res := gjson.GetBytes(body, "input_tokens"); res.Exists() {
+		usageRes = gjson.ParseBytes(body)
+		prefixPath = ""
+	} else {
+		return body
+	}
+
+	// 提取常规与缓存 Token 数（兼容 OpenAI 与 Anthropic 格式）
+	inputTokens := int(usageRes.Get("prompt_tokens").Int())
+	if inputTokens == 0 {
+		inputTokens = int(usageRes.Get("input_tokens").Int())
+	}
+	outputTokens := int(usageRes.Get("completion_tokens").Int())
+	if outputTokens == 0 {
+		outputTokens = int(usageRes.Get("output_tokens").Int())
+	}
+
+	cacheReadTokens := int(usageRes.Get("prompt_tokens_details.cached_tokens").Int())
+	if cacheReadTokens == 0 {
+		cacheReadTokens = int(usageRes.Get("cache_read_input_tokens").Int())
+	}
+	cacheCreationTokens := int(usageRes.Get("prompt_tokens_details.cache_creation_tokens").Int())
+	if cacheCreationTokens == 0 {
+		cacheCreationTokens = int(usageRes.Get("cache_creation_input_tokens").Int())
+	}
+
+	// 应用抖动算法
+	newInput, newOutput, newCacheCreation, newCacheRead := ApplyTokenJitter(
+		cfg,
+		inputTokens,
+		outputTokens,
+		cacheCreationTokens,
+		cacheReadTokens,
+	)
+
+	// 如果没有变化，原样返回
+	if newInput == inputTokens && newOutput == outputTokens &&
+		newCacheCreation == cacheCreationTokens && newCacheRead == cacheReadTokens {
+		return body
+	}
+
+	out := body
+	var err error
+
+	// OpenAI 语法: prompt_tokens, completion_tokens, total_tokens
+	if usageRes.Get("prompt_tokens").Exists() {
+		out, err = sjson.SetBytes(out, prefixPath+"prompt_tokens", newInput)
+		if err == nil {
+			out, _ = sjson.SetBytes(out, prefixPath+"completion_tokens", newOutput)
+			out, _ = sjson.SetBytes(out, prefixPath+"total_tokens", newInput+newOutput)
+			if usageRes.Get("prompt_tokens_details.cached_tokens").Exists() {
+				out, _ = sjson.SetBytes(out, prefixPath+"prompt_tokens_details.cached_tokens", newCacheRead)
+			}
+			if usageRes.Get("prompt_tokens_details.cache_creation_tokens").Exists() {
+				out, _ = sjson.SetBytes(out, prefixPath+"prompt_tokens_details.cache_creation_tokens", newCacheCreation)
+			}
+		}
+	} else if usageRes.Get("input_tokens").Exists() {
+		// Anthropic / Gemini 语法: input_tokens, output_tokens
+		out, err = sjson.SetBytes(out, prefixPath+"input_tokens", newInput)
+		if err == nil {
+			out, _ = sjson.SetBytes(out, prefixPath+"output_tokens", newOutput)
+			if usageRes.Get("cache_read_input_tokens").Exists() {
+				out, _ = sjson.SetBytes(out, prefixPath+"cache_read_input_tokens", newCacheRead)
+			}
+			if usageRes.Get("cache_creation_input_tokens").Exists() {
+				out, _ = sjson.SetBytes(out, prefixPath+"cache_creation_input_tokens", newCacheCreation)
+			}
+		}
+	}
+
+	return out
 }

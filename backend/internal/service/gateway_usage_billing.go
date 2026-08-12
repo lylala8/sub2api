@@ -1104,20 +1104,6 @@ func (s *GatewayService) calculateTokenCost(
 	multiplier float64,
 	opts *recordUsageOpts,
 ) *CostBreakdown {
-	// Apply token jitter if configured
-	if s.opsService != nil {
-		jitterCfg, _ := s.opsService.GetTokenJitterConfig(ctx)
-		if jitterCfg != nil && jitterCfg.Enabled {
-			result.Usage.InputTokens, result.Usage.OutputTokens, result.Usage.CacheCreationInputTokens, result.Usage.CacheReadInputTokens = ApplyTokenJitter(
-				jitterCfg,
-				result.Usage.InputTokens,
-				result.Usage.OutputTokens,
-				result.Usage.CacheCreationInputTokens,
-				result.Usage.CacheReadInputTokens,
-			)
-		}
-	}
-
 	tokens := UsageTokens{
 		InputTokens:           result.Usage.InputTokens,
 		OutputTokens:          result.Usage.OutputTokens,
