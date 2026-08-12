@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"errors"
 	"math/rand"
+	"sync"
+	"time"
 )
 
 const (
@@ -26,6 +28,16 @@ type TokenJitterConfig struct {
 	CacheTokenProbability  float64 `json:"cache_token_probability"`
 	CacheTokenMinTokens    int     `json:"cache_token_min_tokens"`
 }
+
+// 本地内存缓存，避免高并发计费热路径每次去数据库读配置
+type tokenJitterCache struct {
+	sync.RWMutex
+	cfg       *TokenJitterConfig
+	updatedAt time.Time
+}
+
+var globalTokenJitterCache tokenJitterCache
+const tokenJitterCacheTTL = 5 * time.Second
 
 func defaultTokenJitterConfig() *TokenJitterConfig {
 	return &TokenJitterConfig{
@@ -77,6 +89,16 @@ func (s *OpsService) GetTokenJitterConfig(ctx context.Context) (*TokenJitterConf
 	if s == nil || s.settingRepo == nil {
 		return defaultCfg, nil
 	}
+
+	// 优先检查 5 秒内的内存缓存
+	globalTokenJitterCache.RLock()
+	if globalTokenJitterCache.cfg != nil && time.Since(globalTokenJitterCache.updatedAt) < tokenJitterCacheTTL {
+		cached := globalTokenJitterCache.cfg
+		globalTokenJitterCache.RUnlock()
+		return cached, nil
+	}
+	globalTokenJitterCache.RUnlock()
+
 	if ctx == nil {
 		ctx = context.Background()
 	}
@@ -84,6 +106,10 @@ func (s *OpsService) GetTokenJitterConfig(ctx context.Context) (*TokenJitterConf
 	raw, err := s.settingRepo.GetValue(ctx, SettingKeyTokenJitter)
 	if err != nil {
 		if errors.Is(err, ErrSettingNotFound) {
+			globalTokenJitterCache.Lock()
+			globalTokenJitterCache.cfg = defaultCfg
+			globalTokenJitterCache.updatedAt = time.Now()
+			globalTokenJitterCache.Unlock()
 			return defaultCfg, nil
 		}
 		return nil, err
@@ -100,6 +126,12 @@ func (s *OpsService) GetTokenJitterConfig(ctx context.Context) (*TokenJitterConf
 	if cfg.CacheTokenMode == "" {
 		cfg.CacheTokenMode = ModeAll
 	}
+
+	// 更新内存缓存
+	globalTokenJitterCache.Lock()
+	globalTokenJitterCache.cfg = cfg
+	globalTokenJitterCache.updatedAt = time.Now()
+	globalTokenJitterCache.Unlock()
 
 	return cfg, nil
 }
@@ -129,6 +161,13 @@ func (s *OpsService) UpdateTokenJitterConfig(ctx context.Context, cfg *TokenJitt
 
 	updated := &TokenJitterConfig{}
 	_ = json.Unmarshal(raw, updated)
+
+	// 更新设置时，立即刷新/清除本地内存缓存，确保保存后配置立即生效
+	globalTokenJitterCache.Lock()
+	globalTokenJitterCache.cfg = updated
+	globalTokenJitterCache.updatedAt = time.Now()
+	globalTokenJitterCache.Unlock()
+
 	return updated, nil
 }
 
