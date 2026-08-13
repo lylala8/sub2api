@@ -27,5 +27,13 @@ export default {
     targetAllCache: '缓存读取与创建 Token',
     targetReadOnly: '仅缓存读取 Token',
     targetCreationOnly: '仅缓存创建 Token',
+    groupCacheTitle: '分组缓存转化控制',
+    groupCacheHint: '可针对特定分组设置缓存保留比例。未选中的分组默认保持 100% 缓存折扣；已选分组按照设定比例保留缓存，剩余部分转为常规输入 Token 计费。',
+    selectGroupPlaceholder: '选择需要自定义的分组...',
+    addGroup: '添加分组配置',
+    groupRatioLabel: '缓存保持比例',
+    groupRatioHint: '例如 80% 比例：1000 缓存 Token 中保留 800 为缓存，剩余 200 转移至常规输入 (Input) 按全额计费。',
+    noGroupSelected: '暂未添加分组配置，所有分组默认保持 100% 缓存。',
+    removeGroup: '移除',
   },
 }

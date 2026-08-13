@@ -29,5 +29,13 @@ export default {
     targetAllCache: 'Cache read & creation tokens',
     targetReadOnly: 'Cache read tokens only',
     targetCreationOnly: 'Cache creation tokens only',
+    groupCacheTitle: 'Group Cache Conversion Control',
+    groupCacheHint: 'Configure cache retention ratio per group. Unselected groups remain 100% cached by default. Selected groups retain specified cache ratio, converting remaining tokens to regular input tokens.',
+    selectGroupPlaceholder: 'Select group to add...',
+    addGroup: 'Add Group Rule',
+    groupRatioLabel: 'Cache Retention Ratio',
+    groupRatioHint: 'e.g. 80%: 800 of 1000 cache tokens are kept, remaining 200 tokens converted to regular input tokens at full price.',
+    noGroupSelected: 'No group rules added. All groups remain 100% cached by default.',
+    removeGroup: 'Remove',
   },
 }

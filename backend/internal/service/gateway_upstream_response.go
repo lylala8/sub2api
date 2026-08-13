@@ -1075,7 +1075,8 @@ func (s *GatewayService) handleStreamingResponse(ctx context.Context, resp *http
 						restored := reverseToolNamesIfPresent(c, []byte(block))
 						if strings.Contains(string(restored), `"usage"`) && s.opsService != nil {
 							if jitterCfg, _ := s.opsService.GetTokenJitterConfig(ctx); jitterCfg != nil && jitterCfg.Enabled {
-								restored = RewriteJSONUsageBytes(jitterCfg, restored)
+								gID := getOpenAIGroupIDFromContext(c)
+								restored = RewriteJSONUsageBytes(jitterCfg, restored, gID)
 							}
 						}
 						if _, werr := fmt.Fprint(w, string(restored)); werr != nil {
@@ -1456,7 +1457,8 @@ func (s *GatewayService) handleNonStreamingResponse(ctx context.Context, resp *h
 
 	if s.opsService != nil {
 		if jitterCfg, _ := s.opsService.GetTokenJitterConfig(ctx); jitterCfg != nil && jitterCfg.Enabled {
-			body = RewriteJSONUsageBytes(jitterCfg, body)
+			gID := getOpenAIGroupIDFromContext(c)
+			body = RewriteJSONUsageBytes(jitterCfg, body, gID)
 		}
 	}
 

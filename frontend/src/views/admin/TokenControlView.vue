@@ -1,7 +1,9 @@
 <script setup lang="ts">
 import { ref, onMounted, computed } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { getTokenJitterConfig, updateTokenJitterConfig, type TokenJitterConfig } from '@/api/tokenJitter'
+import { getTokenJitterConfig, updateTokenJitterConfig, type TokenJitterConfig, type GroupCacheRatio } from '@/api/tokenJitter'
+import { getAll as getAllGroups } from '@/api/admin/groups'
+import type { AdminGroup } from '@/types'
 import { useAppStore } from '@/stores'
 
 const { t } = useI18n()
@@ -9,6 +11,9 @@ const appStore = useAppStore()
 
 const loading = ref(false)
 const saving = ref(false)
+
+const allGroups = ref<AdminGroup[]>([])
+const selectedGroupToAdd = ref<number | ''>('')
 
 const config = ref<TokenJitterConfig>({
   enabled: false,
@@ -20,6 +25,12 @@ const config = ref<TokenJitterConfig>({
   cache_token_range: 0,
   cache_token_probability: 0,
   cache_token_min_tokens: 0,
+  group_cache_ratios: [],
+})
+
+const availableGroupsForSelect = computed(() => {
+  const existingIds = new Set((config.value.group_cache_ratios || []).map((g) => g.group_id))
+  return allGroups.value.filter((g) => !existingIds.has(g.id))
 })
 
 const normalTargetText = computed(() => {
@@ -44,10 +55,42 @@ const cacheTargetText = computed(() => {
   }
 })
 
+function addGroupRatioRule() {
+  if (!selectedGroupToAdd.value) return
+  const g = allGroups.value.find((item) => item.id === selectedGroupToAdd.value)
+  if (!g) return
+
+  if (!config.value.group_cache_ratios) {
+    config.value.group_cache_ratios = []
+  }
+
+  config.value.group_cache_ratios.push({
+    group_id: g.id,
+    group_name: g.name,
+    ratio: 80.0, // 默认 80%
+  })
+
+  selectedGroupToAdd.value = ''
+}
+
+function removeGroupRatioRule(index: number) {
+  if (config.value.group_cache_ratios) {
+    config.value.group_cache_ratios.splice(index, 1)
+  }
+}
+
 async function fetchConfig() {
   loading.value = true
   try {
-    config.value = await getTokenJitterConfig()
+    const [cfg, groups] = await Promise.all([
+      getTokenJitterConfig(),
+      getAllGroups().catch(() => []),
+    ])
+    if (!cfg.group_cache_ratios) {
+      cfg.group_cache_ratios = []
+    }
+    config.value = cfg
+    allGroups.value = groups
   } catch (err) {
     appStore.showError(t('common.fetchFailed'))
   } finally {
@@ -59,6 +102,9 @@ async function saveConfig() {
   saving.value = true
   try {
     config.value = await updateTokenJitterConfig(config.value)
+    if (!config.value.group_cache_ratios) {
+      config.value.group_cache_ratios = []
+    }
     appStore.showSuccess(t('common.saved'))
   } catch (err: any) {
     const msg = err?.response?.data?.message || t('common.saveFailed')
@@ -283,6 +329,86 @@ onMounted(fetchConfig)
                 min: config.cache_token_min_tokens,
               }) }}
             </p>
+          </div>
+        </div>
+
+        <!-- Group Cache Ratio Card -->
+        <div class="rounded-xl border border-gray-200 bg-white shadow-sm dark:border-dark-600 dark:bg-dark-800">
+          <div class="border-b border-gray-100 px-5 py-3.5 dark:border-dark-700">
+            <h2 class="text-sm font-semibold text-gray-800 dark:text-gray-100">
+              {{ t('admin.tokenControl.groupCacheTitle') }}
+            </h2>
+            <p class="mt-0.5 text-xs text-gray-500 dark:text-gray-400">{{ t('admin.tokenControl.groupCacheHint') }}</p>
+          </div>
+          <div class="px-5 py-4">
+            <!-- Add group dropdown and button -->
+            <div class="flex items-center gap-3">
+              <select
+                v-model="selectedGroupToAdd"
+                class="flex-1 rounded-lg border border-gray-300 bg-white px-3 py-1.5 text-sm text-gray-900 focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500 dark:border-dark-600 dark:bg-dark-700 dark:text-white"
+              >
+                <option value="" disabled>{{ t('admin.tokenControl.selectGroupPlaceholder') }}</option>
+                <option v-for="g in availableGroupsForSelect" :key="g.id" :value="g.id">
+                  {{ g.name }} (ID: {{ g.id }})
+                </option>
+              </select>
+              <button
+                type="button"
+                :disabled="!selectedGroupToAdd"
+                class="inline-flex items-center rounded-lg bg-primary-600 px-3.5 py-1.5 text-xs font-medium text-white transition-colors hover:bg-primary-700 disabled:cursor-not-allowed disabled:opacity-50"
+                @click="addGroupRatioRule"
+              >
+                + {{ t('admin.tokenControl.addGroup') }}
+              </button>
+            </div>
+
+            <!-- List of configured group rules -->
+            <div v-if="config.group_cache_ratios && config.group_cache_ratios.length > 0" class="mt-4 space-y-3">
+              <div
+                v-for="(item, idx) in config.group_cache_ratios"
+                :key="item.group_id"
+                class="rounded-lg border border-gray-100 bg-gray-50/80 p-3.5 dark:border-dark-700 dark:bg-dark-750"
+              >
+                <div class="flex items-center justify-between">
+                  <div class="flex items-center gap-2">
+                    <span class="inline-flex items-center rounded-md bg-primary-50 px-2 py-0.5 text-xs font-medium text-primary-700 dark:bg-primary-950/50 dark:text-primary-300">
+                      {{ item.group_name }}
+                    </span>
+                    <span class="text-xs text-gray-400 dark:text-gray-500">ID: {{ item.group_id }}</span>
+                  </div>
+                  <button
+                    type="button"
+                    class="text-xs text-red-500 hover:text-red-700 dark:text-red-400 dark:hover:text-red-300"
+                    @click="removeGroupRatioRule(idx)"
+                  >
+                    {{ t('admin.tokenControl.removeGroup') }}
+                  </button>
+                </div>
+                <div class="mt-3">
+                  <div class="flex items-center justify-between text-xs">
+                    <span class="font-medium text-gray-600 dark:text-gray-400">{{ t('admin.tokenControl.groupRatioLabel') }}</span>
+                    <span class="font-semibold text-gray-900 dark:text-white">{{ item.ratio.toFixed(0) }}%</span>
+                  </div>
+                  <input
+                    v-model.number="item.ratio"
+                    type="range"
+                    min="0"
+                    max="100"
+                    step="1"
+                    class="range-slider mt-1.5 w-full"
+                  />
+                  <div class="mt-1 flex justify-between text-[10px] text-gray-400">
+                    <span>0% (全转常规Input)</span><span>50%</span><span>100% (全保留缓存)</span>
+                  </div>
+                  <p class="mt-1.5 text-[11px] text-gray-500 dark:text-gray-400">
+                    💡 例如 1000 缓存：其中 <strong>{{ (1000 * item.ratio / 100).toFixed(0) }} Token</strong> 保留缓存优惠，剩余 <strong>{{ (1000 - 1000 * item.ratio / 100).toFixed(0) }} Token</strong> 转移到常规 Input 按原价计费。
+                  </p>
+                </div>
+              </div>
+            </div>
+            <div v-else class="mt-3 rounded-lg border border-dashed border-gray-200 py-4 text-center text-xs text-gray-400 dark:border-dark-600">
+              {{ t('admin.tokenControl.noGroupSelected') }}
+            </div>
           </div>
         </div>
       </div>

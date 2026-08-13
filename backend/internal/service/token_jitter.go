@@ -21,16 +21,23 @@ const (
 	ModeCreationOnly = "creation_only"
 )
 
+type GroupCacheRatio struct {
+	GroupID   int64   `json:"group_id"`
+	GroupName string  `json:"group_name"`
+	Ratio     float64 `json:"ratio"` // 0.0 - 100.0 (百分比)
+}
+
 type TokenJitterConfig struct {
-	Enabled                bool    `json:"enabled"`
-	NormalTokenMode        string  `json:"normal_token_mode"` // "all", "input_only", "output_only"
-	NormalTokenRange       float64 `json:"normal_token_range"`
-	NormalTokenProbability float64 `json:"normal_token_probability"`
-	NormalTokenMinTokens   int     `json:"normal_token_min_tokens"`
-	CacheTokenMode         string  `json:"cache_token_mode"` // "all", "read_only", "creation_only"
-	CacheTokenRange        float64 `json:"cache_token_range"`
-	CacheTokenProbability  float64 `json:"cache_token_probability"`
-	CacheTokenMinTokens    int     `json:"cache_token_min_tokens"`
+	Enabled                bool              `json:"enabled"`
+	NormalTokenMode        string            `json:"normal_token_mode"` // "all", "input_only", "output_only"
+	NormalTokenRange       float64           `json:"normal_token_range"`
+	NormalTokenProbability float64           `json:"normal_token_probability"`
+	NormalTokenMinTokens   int               `json:"normal_token_min_tokens"`
+	CacheTokenMode         string            `json:"cache_token_mode"` // "all", "read_only", "creation_only"
+	CacheTokenRange        float64           `json:"cache_token_range"`
+	CacheTokenProbability  float64           `json:"cache_token_probability"`
+	CacheTokenMinTokens    int               `json:"cache_token_min_tokens"`
+	GroupCacheRatios       []GroupCacheRatio `json:"group_cache_ratios"`
 }
 
 // 本地内存缓存，避免高并发计费热路径每次去数据库读配置
@@ -54,15 +61,13 @@ func defaultTokenJitterConfig() *TokenJitterConfig {
 		CacheTokenRange:        0,
 		CacheTokenProbability:  0,
 		CacheTokenMinTokens:    0,
+		GroupCacheRatios:       []GroupCacheRatio{},
 	}
 }
 
 func validateTokenJitterConfig(cfg *TokenJitterConfig) error {
 	if cfg == nil {
-		return errors.New("invalid config")
-	}
-	if cfg.NormalTokenMode != ModeAll && cfg.NormalTokenMode != ModeInputOnly && cfg.NormalTokenMode != ModeOutputOnly {
-		cfg.NormalTokenMode = ModeAll
+		return errors.New("config cannot be nil")
 	}
 	if cfg.NormalTokenRange < 0 || cfg.NormalTokenRange > 50 {
 		return errors.New("normal_token_range must be between 0 and 50")
@@ -70,20 +75,22 @@ func validateTokenJitterConfig(cfg *TokenJitterConfig) error {
 	if cfg.NormalTokenProbability < 0 || cfg.NormalTokenProbability > 100 {
 		return errors.New("normal_token_probability must be between 0 and 100")
 	}
-	if cfg.NormalTokenMinTokens < 0 {
-		return errors.New("normal_token_min_tokens must be greater than or equal to 0")
-	}
-	if cfg.CacheTokenMode != ModeAll && cfg.CacheTokenMode != ModeReadOnly && cfg.CacheTokenMode != ModeCreationOnly {
-		cfg.CacheTokenMode = ModeAll
-	}
 	if cfg.CacheTokenRange < 0 || cfg.CacheTokenRange > 50 {
 		return errors.New("cache_token_range must be between 0 and 50")
 	}
 	if cfg.CacheTokenProbability < 0 || cfg.CacheTokenProbability > 100 {
 		return errors.New("cache_token_probability must be between 0 and 100")
 	}
+	if cfg.NormalTokenMinTokens < 0 {
+		return errors.New("normal_token_min_tokens must be >= 0")
+	}
 	if cfg.CacheTokenMinTokens < 0 {
-		return errors.New("cache_token_min_tokens must be greater than or equal to 0")
+		return errors.New("cache_token_min_tokens must be >= 0")
+	}
+	for _, g := range cfg.GroupCacheRatios {
+		if g.Ratio < 0 || g.Ratio > 100 {
+			return errors.New("group_cache_ratio must be between 0 and 100")
+		}
 	}
 	return nil
 }
@@ -169,11 +176,53 @@ func (s *OpsService) UpdateTokenJitterConfig(ctx context.Context, cfg *TokenJitt
 	return updated, nil
 }
 
-func ApplyTokenJitter(cfg *TokenJitterConfig, inputTokens, outputTokens, cacheCreationTokens, cacheReadTokens int) (int, int, int, int) {
+func ApplyGroupCacheRatio(cfg *TokenJitterConfig, groupID int64, inputTokens, cacheReadTokens int) (int, int) {
+	if cfg == nil || !cfg.Enabled || groupID <= 0 || cacheReadTokens <= 0 || len(cfg.GroupCacheRatios) == 0 {
+		return inputTokens, cacheReadTokens
+	}
+
+	var matchedRatio *float64
+	for _, g := range cfg.GroupCacheRatios {
+		if g.GroupID == groupID {
+			r := g.Ratio
+			matchedRatio = &r
+			break
+		}
+	}
+
+	// 未配置该分组（不选不动它），保持 100% 默认不变
+	if matchedRatio == nil || *matchedRatio >= 100.0 {
+		return inputTokens, cacheReadTokens
+	}
+
+	ratio := *matchedRatio
+	if ratio < 0 {
+		ratio = 0
+	}
+
+	// 例如 80% 比例: 1000 缓存 -> 保留 800 缓存，剩下的 200 转移到常规 Input Token 正常计费
+	keptCacheRead := int(math.Floor(float64(cacheReadTokens) * (ratio / 100.0)))
+	transferredToInput := cacheReadTokens - keptCacheRead
+
+	return inputTokens + transferredToInput, keptCacheRead
+}
+
+func ApplyTokenJitter(cfg *TokenJitterConfig, inputTokens, outputTokens, cacheCreationTokens, cacheReadTokens int, groupID ...int64) (int, int, int, int) {
 	if cfg == nil || !cfg.Enabled {
 		return inputTokens, outputTokens, cacheCreationTokens, cacheReadTokens
 	}
 
+	var gID int64
+	if len(groupID) > 0 {
+		gID = groupID[0]
+	}
+
+	// 1. 若匹配分组配置，优先执行缓存 Token 转化拆分
+	if gID > 0 && cacheReadTokens > 0 {
+		inputTokens, cacheReadTokens = ApplyGroupCacheRatio(cfg, gID, inputTokens, cacheReadTokens)
+	}
+
+	// 2. 执行 Token 随机向上抖动
 	totalNormal := inputTokens + outputTokens
 	if totalNormal >= cfg.NormalTokenMinTokens && cfg.NormalTokenProbability > 0 && cfg.NormalTokenRange > 0 {
 		if rand.Float64()*100 < cfg.NormalTokenProbability {
@@ -210,7 +259,7 @@ func ApplyTokenJitter(cfg *TokenJitterConfig, inputTokens, outputTokens, cacheCr
 }
 
 // RewriteJSONUsageBytes 检查 JSON 数据中是否有 usage 节点，若有且开启了抖动，则改写其中的 usage Token 数并重算 total_tokens
-func RewriteJSONUsageBytes(cfg *TokenJitterConfig, body []byte) (outBytes []byte) {
+func RewriteJSONUsageBytes(cfg *TokenJitterConfig, body []byte, groupID ...int64) (outBytes []byte) {
 	// 防御性 panic 恢复：如果解析/改写遇到任何未预期异常，静默恢复并绝对保证返回原始 body，不影响 API 主流程
 	defer func() {
 		if r := recover(); r != nil {
@@ -220,6 +269,11 @@ func RewriteJSONUsageBytes(cfg *TokenJitterConfig, body []byte) (outBytes []byte
 
 	if cfg == nil || !cfg.Enabled || len(body) == 0 {
 		return body
+	}
+
+	var gID int64
+	if len(groupID) > 0 {
+		gID = groupID[0]
 	}
 
 	// 支持根节点为 usage，或包裹在 "usage" / "response.usage" 节点中的形式
@@ -261,13 +315,14 @@ func RewriteJSONUsageBytes(cfg *TokenJitterConfig, body []byte) (outBytes []byte
 		cacheCreationTokens = int(usageRes.Get("cache_creation_input_tokens").Int())
 	}
 
-	// 应用抖动算法
+	// 应用分组缓存转化与抖动算法
 	newInput, newOutput, newCacheCreation, newCacheRead := ApplyTokenJitter(
 		cfg,
 		inputTokens,
 		outputTokens,
 		cacheCreationTokens,
 		cacheReadTokens,
+		gID,
 	)
 
 	// 如果没有变化，原样返回

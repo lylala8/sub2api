@@ -153,6 +153,42 @@ func TestRewriteJSONUsageBytes_OpenAIFormat(t *testing.T) {
 	assert.NotEqual(t, string(rawJSON), string(out))
 }
 
+func TestApplyGroupCacheRatio(t *testing.T) {
+	cfg := &TokenJitterConfig{
+		Enabled: true,
+		GroupCacheRatios: []GroupCacheRatio{
+			{
+				GroupID:   10,
+				GroupName: "VIP 分组",
+				Ratio:     80.0, // 80%
+			},
+			{
+				GroupID:   20,
+				GroupName: "全额计费分组",
+				Ratio:     0.0, // 0%
+			},
+		},
+	}
+
+	// 1. 测试分组 10 (80% 比例): 1000 缓存读 Token，输入 100
+	// 期待: 缓存 Token = 1000 * 80% = 800；转移 200 到输入 Token -> 输入 Token = 100 + 200 = 300
+	nin, ncr := ApplyGroupCacheRatio(cfg, 10, 100, 1000)
+	assert.Equal(t, 800, ncr, "80% ratio should keep 800 cache read tokens")
+	assert.Equal(t, 300, nin, "80% ratio should convert 200 cache tokens to input tokens")
+
+	// 2. 测试分组 20 (0% 比例): 1000 缓存读 Token，输入 500
+	// 期待: 缓存 Token = 0；转移 1000 到输入 Token -> 输入 Token = 500 + 1000 = 1500
+	nin, ncr = ApplyGroupCacheRatio(cfg, 20, 500, 1000)
+	assert.Equal(t, 0, ncr, "0% ratio should keep 0 cache read tokens")
+	assert.Equal(t, 1500, nin, "0% ratio should convert all 1000 cache tokens to input tokens")
+
+	// 3. 测试未配置的分组 99 ("不选不动它"): 1000 缓存读 Token，输入 200
+	// 期待: 保持 100% 不变 -> 缓存 1000，输入 200
+	nin, ncr = ApplyGroupCacheRatio(cfg, 99, 200, 1000)
+	assert.Equal(t, 1000, ncr, "Unconfigured group must stay 100% untouched")
+	assert.Equal(t, 200, nin, "Unconfigured group input tokens must stay untouched")
+}
+
 func TestRewriteJSONUsageBytes_PanicRecovery(t *testing.T) {
 	cfg := &TokenJitterConfig{
 		Enabled:                true,

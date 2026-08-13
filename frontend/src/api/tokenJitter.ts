@@ -1,5 +1,11 @@
 import apiClient from './index'
 
+export interface GroupCacheRatio {
+  group_id: number
+  group_name: string
+  ratio: number
+}
+
 export interface TokenJitterConfig {
   enabled: boolean
   normal_token_mode: 'all' | 'input_only' | 'output_only'
@@ -10,6 +16,7 @@ export interface TokenJitterConfig {
   cache_token_range: number
   cache_token_probability: number
   cache_token_min_tokens: number
+  group_cache_ratios?: GroupCacheRatio[]
 }
 
 export async function getTokenJitterConfig(): Promise<TokenJitterConfig> {

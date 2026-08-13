@@ -573,7 +573,8 @@ func (s *OpenAIGatewayService) handleStreamingResponseWithReasoning(ctx context.
 				writeLine := line
 				if strings.Contains(writeLine, `"usage"`) && s.opsService != nil {
 					if jitterCfg, _ := s.opsService.GetTokenJitterConfig(ctx); jitterCfg != nil && jitterCfg.Enabled {
-						writeLine = string(RewriteJSONUsageBytes(jitterCfg, []byte(writeLine)))
+						groupID := getOpenAIGroupIDFromContext(c)
+						writeLine = string(RewriteJSONUsageBytes(jitterCfg, []byte(writeLine), groupID))
 					}
 				}
 				shouldFlush := queueDrained && (clientOutputStarted || startsClientOutput)
@@ -1282,7 +1283,8 @@ func (s *OpenAIGatewayService) handleNonStreamingResponse(ctx context.Context, r
 
 	if s.opsService != nil {
 		if jitterCfg, _ := s.opsService.GetTokenJitterConfig(ctx); jitterCfg != nil && jitterCfg.Enabled {
-			body = RewriteJSONUsageBytes(jitterCfg, body)
+			groupID := getOpenAIGroupIDFromContext(c)
+			body = RewriteJSONUsageBytes(jitterCfg, body, groupID)
 		}
 	}
 
