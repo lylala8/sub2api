@@ -571,10 +571,17 @@ func (s *OpenAIGatewayService) handleStreamingResponseWithReasoning(ctx context.
 			// 写入客户端（客户端断开后继续 drain 上游）
 			if !clientDisconnected {
 				writeLine := line
-				if strings.Contains(writeLine, `"usage"`) && s.opsService != nil {
-					if jitterCfg, _ := s.opsService.GetTokenJitterConfig(ctx); jitterCfg != nil && jitterCfg.Enabled {
-						groupID := getOpenAIGroupIDFromContext(c)
-						writeLine = string(RewriteJSONUsageBytes(jitterCfg, []byte(writeLine), groupID))
+				if strings.Contains(writeLine, `"usage"`) {
+					if s.opsService != nil {
+						if jitterCfg, _ := s.opsService.GetTokenJitterConfig(ctx); jitterCfg != nil && jitterCfg.Enabled {
+							groupID := getOpenAIGroupIDFromContext(c)
+							writeLine = string(RewriteJSONUsageBytes(jitterCfg, []byte(writeLine), groupID))
+						}
+					}
+					compatBytes := EnsureOpenAICacheDetailsCompat([]byte(writeLine))
+					writeLine = string(compatBytes)
+					if strings.HasPrefix(writeLine, "data: ") {
+						dataBytes = []byte(strings.TrimPrefix(writeLine, "data: "))
 					}
 				}
 				shouldFlush := queueDrained && (clientOutputStarted || startsClientOutput)
@@ -1287,6 +1294,7 @@ func (s *OpenAIGatewayService) handleNonStreamingResponse(ctx context.Context, r
 			body = RewriteJSONUsageBytes(jitterCfg, body, groupID)
 		}
 	}
+	body = EnsureOpenAICacheDetailsCompat(body)
 
 	if !writeOpenAICompactSSEBridge(c, resp.StatusCode, body) {
 		c.Data(resp.StatusCode, contentType, body)

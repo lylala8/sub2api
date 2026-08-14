@@ -1,6 +1,7 @@
 package service
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -276,7 +277,7 @@ func RewriteJSONUsageBytes(cfg *TokenJitterConfig, body []byte, groupID ...int64
 		gID = groupID[0]
 	}
 
-	// 支持根节点为 usage，或包裹在 "usage" / "response.usage" 节点中的形式
+	// 支持根节点为 usage / response.usage / usageMetadata，或无包裹形式
 	var usageRes gjson.Result
 	var prefixPath string
 
@@ -286,7 +287,13 @@ func RewriteJSONUsageBytes(cfg *TokenJitterConfig, body []byte, groupID ...int64
 	} else if res := gjson.GetBytes(body, "response.usage"); res.Exists() && res.IsObject() {
 		usageRes = res
 		prefixPath = "response.usage."
+	} else if res := gjson.GetBytes(body, "usageMetadata"); res.Exists() && res.IsObject() {
+		usageRes = res
+		prefixPath = "usageMetadata."
 	} else if res := gjson.GetBytes(body, "prompt_tokens"); res.Exists() {
+		usageRes = gjson.ParseBytes(body)
+		prefixPath = ""
+	} else if res := gjson.GetBytes(body, "promptTokenCount"); res.Exists() {
 		usageRes = gjson.ParseBytes(body)
 		prefixPath = ""
 	} else if res := gjson.GetBytes(body, "input_tokens"); res.Exists() {
@@ -296,23 +303,40 @@ func RewriteJSONUsageBytes(cfg *TokenJitterConfig, body []byte, groupID ...int64
 		return body
 	}
 
-	// 提取常规与缓存 Token 数（兼容 OpenAI 与 Anthropic 格式）
+	// 提取常规与缓存 Token 数（兼容 OpenAI、Anthropic、Gemini、DeepSeek 格式）
 	inputTokens := int(usageRes.Get("prompt_tokens").Int())
 	if inputTokens == 0 {
 		inputTokens = int(usageRes.Get("input_tokens").Int())
 	}
+	if inputTokens == 0 {
+		inputTokens = int(usageRes.Get("promptTokenCount").Int())
+	}
+
 	outputTokens := int(usageRes.Get("completion_tokens").Int())
 	if outputTokens == 0 {
 		outputTokens = int(usageRes.Get("output_tokens").Int())
+	}
+	if outputTokens == 0 {
+		outputTokens = int(usageRes.Get("candidatesTokenCount").Int())
 	}
 
 	cacheReadTokens := int(usageRes.Get("prompt_tokens_details.cached_tokens").Int())
 	if cacheReadTokens == 0 {
 		cacheReadTokens = int(usageRes.Get("cache_read_input_tokens").Int())
 	}
+	if cacheReadTokens == 0 {
+		cacheReadTokens = int(usageRes.Get("cachedContentTokenCount").Int())
+	}
+	if cacheReadTokens == 0 {
+		cacheReadTokens = int(usageRes.Get("prompt_cache_hit_tokens").Int())
+	}
+
 	cacheCreationTokens := int(usageRes.Get("prompt_tokens_details.cache_creation_tokens").Int())
 	if cacheCreationTokens == 0 {
 		cacheCreationTokens = int(usageRes.Get("cache_creation_input_tokens").Int())
+	}
+	if cacheCreationTokens == 0 {
+		cacheCreationTokens = int(usageRes.Get("prompt_cache_miss_tokens").Int())
 	}
 
 	// 应用分组缓存转化与抖动算法
@@ -334,7 +358,7 @@ func RewriteJSONUsageBytes(cfg *TokenJitterConfig, body []byte, groupID ...int64
 	out := body
 	var err error
 
-	// OpenAI 语法: prompt_tokens, completion_tokens, total_tokens
+	// 1. OpenAI 语法: prompt_tokens, completion_tokens, total_tokens
 	if usageRes.Get("prompt_tokens").Exists() {
 		out, err = sjson.SetBytes(out, prefixPath+"prompt_tokens", newInput)
 		if err == nil {
@@ -346,9 +370,12 @@ func RewriteJSONUsageBytes(cfg *TokenJitterConfig, body []byte, groupID ...int64
 			if usageRes.Get("prompt_tokens_details.cache_creation_tokens").Exists() {
 				out, _ = sjson.SetBytes(out, prefixPath+"prompt_tokens_details.cache_creation_tokens", newCacheCreation)
 			}
+			if usageRes.Get("prompt_cache_hit_tokens").Exists() {
+				out, _ = sjson.SetBytes(out, prefixPath+"prompt_cache_hit_tokens", newCacheRead)
+			}
 		}
 	} else if usageRes.Get("input_tokens").Exists() {
-		// Anthropic / Gemini 语法: input_tokens, output_tokens
+		// 2. Anthropic 语法: input_tokens, output_tokens
 		out, err = sjson.SetBytes(out, prefixPath+"input_tokens", newInput)
 		if err == nil {
 			out, _ = sjson.SetBytes(out, prefixPath+"output_tokens", newOutput)
@@ -359,7 +386,77 @@ func RewriteJSONUsageBytes(cfg *TokenJitterConfig, body []byte, groupID ...int64
 				out, _ = sjson.SetBytes(out, prefixPath+"cache_creation_input_tokens", newCacheCreation)
 			}
 		}
+	} else if usageRes.Get("promptTokenCount").Exists() {
+		// 3. Gemini 语法: promptTokenCount, candidatesTokenCount, totalTokenCount
+		out, err = sjson.SetBytes(out, prefixPath+"promptTokenCount", newInput)
+		if err == nil {
+			out, _ = sjson.SetBytes(out, prefixPath+"candidatesTokenCount", newOutput)
+			out, _ = sjson.SetBytes(out, prefixPath+"totalTokenCount", newInput+newOutput)
+			if usageRes.Get("cachedContentTokenCount").Exists() {
+				out, _ = sjson.SetBytes(out, prefixPath+"cachedContentTokenCount", newCacheRead)
+			}
+		}
 	}
 
-	return out
+	return EnsureOpenAICacheDetailsCompat(out)
+}
+
+// EnsureOpenAICacheDetailsCompat 保证 /v1/responses 协议的缓存字段能够兼容下游 NewAPI / 老客户端
+func EnsureOpenAICacheDetailsCompat(body []byte) []byte {
+	if len(body) == 0 {
+		return body
+	}
+
+	hasSSEPrefix := bytes.HasPrefix(body, []byte("data: "))
+	jsonBytes := body
+	if hasSSEPrefix {
+		jsonBytes = bytes.TrimPrefix(body, []byte("data: "))
+	}
+
+	var prefixPath string
+	var usageRes gjson.Result
+
+	if res := gjson.GetBytes(jsonBytes, "usage"); res.Exists() && res.IsObject() {
+		usageRes = res
+		prefixPath = "usage."
+	} else if res := gjson.GetBytes(jsonBytes, "response.usage"); res.Exists() && res.IsObject() {
+		usageRes = res
+		prefixPath = "response.usage."
+	} else if res := gjson.GetBytes(jsonBytes, "input_tokens_details"); res.Exists() {
+		usageRes = gjson.ParseBytes(jsonBytes)
+		prefixPath = ""
+	} else {
+		return body
+	}
+
+	// 如果存在 input_tokens_details.cached_tokens，补齐经典的 prompt_tokens_details.cached_tokens 以及 cached_tokens
+	cached := usageRes.Get("input_tokens_details.cached_tokens").Int()
+	if cached == 0 {
+		cached = usageRes.Get("prompt_tokens_details.cached_tokens").Int()
+	}
+
+	if cached > 0 {
+		out := jsonBytes
+		var modified bool
+
+		if !usageRes.Get("prompt_tokens_details.cached_tokens").Exists() {
+			if updated, err := sjson.SetBytes(out, prefixPath+"prompt_tokens_details.cached_tokens", cached); err == nil {
+				out = updated
+				modified = true
+			}
+		}
+		if !usageRes.Get("cached_tokens").Exists() {
+			if updated, err := sjson.SetBytes(out, prefixPath+"cached_tokens", cached); err == nil {
+				out = updated
+				modified = true
+			}
+		}
+		if modified {
+			if hasSSEPrefix {
+				return append([]byte("data: "), out...)
+			}
+			return out
+		}
+	}
+	return body
 }

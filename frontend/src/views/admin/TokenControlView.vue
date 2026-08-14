@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ref, onMounted, computed } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { getTokenJitterConfig, updateTokenJitterConfig, type TokenJitterConfig, type GroupCacheRatio } from '@/api/tokenJitter'
+import { getTokenJitterConfig, updateTokenJitterConfig, type TokenJitterConfig } from '@/api/tokenJitter'
 import { getAll as getAllGroups } from '@/api/admin/groups'
 import type { AdminGroup } from '@/types'
 import { useAppStore } from '@/stores'

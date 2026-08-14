@@ -153,6 +153,33 @@ func TestRewriteJSONUsageBytes_OpenAIFormat(t *testing.T) {
 	assert.NotEqual(t, string(rawJSON), string(out))
 }
 
+func TestRewriteJSONUsageBytes_Protocols(t *testing.T) {
+	cfg := &TokenJitterConfig{
+		Enabled: true,
+		GroupCacheRatios: []GroupCacheRatio{
+			{GroupID: 1, Ratio: 80.0},
+		},
+	}
+
+	// 1. OpenAI 格式 (prompt_tokens_details.cached_tokens)
+	openAIJSON := []byte(`{"usage":{"prompt_tokens":1000,"completion_tokens":200,"prompt_tokens_details":{"cached_tokens":1000}}}`)
+	outOpenAI := RewriteJSONUsageBytes(cfg, openAIJSON, 1)
+	assert.Contains(t, string(outOpenAI), `"cached_tokens":800`)
+	assert.Contains(t, string(outOpenAI), `"prompt_tokens":1200`)
+
+	// 2. Anthropic 格式 (input_tokens & cache_read_input_tokens)
+	anthropicJSON := []byte(`{"usage":{"input_tokens":500,"output_tokens":100,"cache_read_input_tokens":1000}}`)
+	outAnthropic := RewriteJSONUsageBytes(cfg, anthropicJSON, 1)
+	assert.Contains(t, string(outAnthropic), `"cache_read_input_tokens":800`)
+	assert.Contains(t, string(outAnthropic), `"input_tokens":700`)
+
+	// 3. Gemini 格式 (usageMetadata)
+	geminiJSON := []byte(`{"usageMetadata":{"promptTokenCount":600,"candidatesTokenCount":150,"cachedContentTokenCount":1000}}`)
+	outGemini := RewriteJSONUsageBytes(cfg, geminiJSON, 1)
+	assert.Contains(t, string(outGemini), `"cachedContentTokenCount":800`)
+	assert.Contains(t, string(outGemini), `"promptTokenCount":800`)
+}
+
 func TestApplyGroupCacheRatio(t *testing.T) {
 	cfg := &TokenJitterConfig{
 		Enabled: true,
