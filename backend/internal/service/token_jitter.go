@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"log/slog"
 	"math"
 	"math/rand"
 	"sync"
@@ -205,6 +206,18 @@ func ApplyGroupCacheRatio(cfg *TokenJitterConfig, groupID int64, inputTokens, ca
 	keptCacheRead := int(math.Floor(float64(cacheReadTokens) * (ratio / 100.0)))
 	transferredToInput := cacheReadTokens - keptCacheRead
 
+	if transferredToInput > 0 {
+		slog.Info("token_jitter.group_cache_ratio_applied",
+			"group_id", groupID,
+			"ratio", ratio,
+			"orig_input_tokens", inputTokens,
+			"orig_cache_read_tokens", cacheReadTokens,
+			"new_input_tokens", inputTokens+transferredToInput,
+			"new_cache_read_tokens", keptCacheRead,
+			"transferred_to_input", transferredToInput,
+		)
+	}
+
 	return inputTokens + transferredToInput, keptCacheRead
 }
 
@@ -224,6 +237,8 @@ func ApplyTokenJitter(cfg *TokenJitterConfig, inputTokens, outputTokens, cacheCr
 	}
 
 	// 2. 执行 Token 随机向上抖动
+	origInput := inputTokens
+	origOutput := outputTokens
 	totalNormal := inputTokens + outputTokens
 	if totalNormal >= cfg.NormalTokenMinTokens && cfg.NormalTokenProbability > 0 && cfg.NormalTokenRange > 0 {
 		if rand.Float64()*100 < cfg.NormalTokenProbability {
@@ -237,9 +252,21 @@ func ApplyTokenJitter(cfg *TokenJitterConfig, inputTokens, outputTokens, cacheCr
 				inputTokens = int(math.Ceil(float64(inputTokens) * jitterMultiplier))
 				outputTokens = int(math.Ceil(float64(outputTokens) * jitterMultiplier))
 			}
+			slog.Info("token_jitter.normal_jitter_applied",
+				"group_id", gID,
+				"mode", cfg.NormalTokenMode,
+				"orig_input_tokens", origInput,
+				"orig_output_tokens", origOutput,
+				"new_input_tokens", inputTokens,
+				"new_output_tokens", outputTokens,
+				"input_added", inputTokens-origInput,
+				"output_added", outputTokens-origOutput,
+			)
 		}
 	}
 
+	origCacheCreation := cacheCreationTokens
+	origCacheRead := cacheReadTokens
 	totalCache := cacheCreationTokens + cacheReadTokens
 	if totalCache >= cfg.CacheTokenMinTokens && cfg.CacheTokenProbability > 0 && cfg.CacheTokenRange > 0 {
 		if rand.Float64()*100 < cfg.CacheTokenProbability {
@@ -253,6 +280,16 @@ func ApplyTokenJitter(cfg *TokenJitterConfig, inputTokens, outputTokens, cacheCr
 				cacheCreationTokens = int(math.Ceil(float64(cacheCreationTokens) * jitterMultiplier))
 				cacheReadTokens = int(math.Ceil(float64(cacheReadTokens) * jitterMultiplier))
 			}
+			slog.Info("token_jitter.cache_jitter_applied",
+				"group_id", gID,
+				"mode", cfg.CacheTokenMode,
+				"orig_cache_creation_tokens", origCacheCreation,
+				"orig_cache_read_tokens", origCacheRead,
+				"new_cache_creation_tokens", cacheCreationTokens,
+				"new_cache_read_tokens", cacheReadTokens,
+				"cache_creation_added", cacheCreationTokens-origCacheCreation,
+				"cache_read_added", cacheReadTokens-origCacheRead,
+			)
 		}
 	}
 

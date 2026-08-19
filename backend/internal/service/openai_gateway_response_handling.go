@@ -571,7 +571,7 @@ func (s *OpenAIGatewayService) handleStreamingResponseWithReasoning(ctx context.
 			// 写入客户端（客户端断开后继续 drain 上游）
 			if !clientDisconnected {
 				writeLine := line
-				if strings.Contains(writeLine, `"usage"`) {
+				if strings.Contains(writeLine, `"usage"`) || strings.Contains(writeLine, `"usageMetadata"`) || strings.Contains(writeLine, `"prompt_tokens"`) || strings.Contains(writeLine, `"input_tokens"`) || strings.Contains(writeLine, `"promptTokenCount"`) {
 					if s.opsService != nil {
 						if jitterCfg, _ := s.opsService.GetTokenJitterConfig(ctx); jitterCfg != nil && jitterCfg.Enabled {
 							groupID := getOpenAIGroupIDFromContext(c)

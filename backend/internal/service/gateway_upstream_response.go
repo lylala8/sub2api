@@ -1073,7 +1073,8 @@ func (s *GatewayService) handleStreamingResponse(ctx context.Context, resp *http
 				for _, block := range outputBlocks {
 					if !clientDisconnected {
 						restored := reverseToolNamesIfPresent(c, []byte(block))
-						if strings.Contains(string(restored), `"usage"`) && s.opsService != nil {
+						sStr := string(restored)
+						if (strings.Contains(sStr, `"usage"`) || strings.Contains(sStr, `"usageMetadata"`) || strings.Contains(sStr, `"prompt_tokens"`) || strings.Contains(sStr, `"input_tokens"`) || strings.Contains(sStr, `"promptTokenCount"`)) && s.opsService != nil {
 							if jitterCfg, _ := s.opsService.GetTokenJitterConfig(ctx); jitterCfg != nil && jitterCfg.Enabled {
 								gID := getOpenAIGroupIDFromContext(c)
 								restored = RewriteJSONUsageBytes(jitterCfg, restored, gID)
